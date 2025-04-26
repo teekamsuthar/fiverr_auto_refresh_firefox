@@ -1,0 +1,29 @@
+{
+  "manifest_version": 2,
+  "name": "Fiverr Auto Refresher",
+  "version": "1.1",
+  "description": "Automatically refreshes the active Fiverr tab and shows a countdown timer.",
+  "permissions": ["alarms", "tabs", "storage", "*://*.fiverr.com/*"],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.fiverr.com/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
