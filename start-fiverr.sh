@@ -1,7 +1,7 @@
 #!/bin/bash
-cd /home/pi/your-extension-folder
+cd /home/teekamsuthar/Downloads/fiverr_auto_refresh_firefox
 web-ext run \
-  --firefox-profile="zjigiz0vq.default-esr" \
+  --firefox-profile="/home/teekamsuthar/.mozilla/firefox/zjgiz0vq.default-esr" \
   --keep-profile-changes \
   --start-url="https://www.fiverr.com/seller_dashboard"
 
