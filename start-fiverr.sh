@@ -1,5 +1,6 @@
 #!/bin/bash
 cd /home/teekamsuthar/Downloads/fiverr_auto_refresh_firefox
+git pull origin main
 web-ext run \
   --firefox-profile="/home/teekamsuthar/.mozilla/firefox/zjgiz0vq.default-esr" \
   --keep-profile-changes \
