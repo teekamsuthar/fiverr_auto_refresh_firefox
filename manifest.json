@@ -16,6 +16,12 @@
       "48": "icons/icon-48.png"
     }
   },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "230511ca7797cb4538fc798d56377980dfee42d5@temporary-addon",
+      "strict_min_version": "1.0"
+    }
+  },
   "icons": {
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"

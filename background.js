@@ -4,7 +4,14 @@ const ALARM_NAME = 'fiverrRefreshAlarm';
 // Default settings (in seconds)
 const DEFAULT_MIN_INTERVAL_S = 5 * 60; // 5 minutes
 const DEFAULT_MAX_INTERVAL_S = 10 * 60; // 10 minutes
-const DEFAULT_URL_LIST = ["https://www.fiverr.com/"]; // Default URL if list is empty
+// Updated Default URL list
+const DEFAULT_URL_LIST = [
+  "https://www.fiverr.com/inbox",
+  "https://www.fiverr.com/briefs/overview/matches",
+  "https://www.fiverr.com/catalog/manage",
+  "https://www.fiverr.com/seller/levels",
+  "https://www.fiverr.com/seller_dashboard"
+];
 
 let activeFiverrTabId = null;
 let nextRefreshTime = null; // Store timestamp (Date.now() + delayMs)
@@ -12,10 +19,74 @@ let minIntervalS = DEFAULT_MIN_INTERVAL_S;
 let maxIntervalS = DEFAULT_MAX_INTERVAL_S;
 let fiverrUrls = [...DEFAULT_URL_LIST]; // Store the list of URLs to cycle through
 let currentUrlIndex = 0; // Index for the fiverrUrls list
+let badgeUpdateIntervalId = null; // Added for badge updates
+
+// --- Badge Management ---
+
+function formatBadgeTime(totalSeconds) {
+  if (totalSeconds === null || totalSeconds < 0) {
+    return '';
+  }
+  if (totalSeconds >= 60) {
+    const minutes = Math.ceil(totalSeconds / 60); // Use ceil for minutes > 0
+    return `${minutes}m`;
+  } else {
+    return `${totalSeconds}s`;
+  }
+}
+
+async function updateBadgeText() {
+  let remainingSeconds = null;
+  if (nextRefreshTime) {
+    const now = Date.now();
+    remainingSeconds = Math.max(0, Math.round((nextRefreshTime - now) / 1000));
+  }
+
+  const badgeText = formatBadgeTime(remainingSeconds);
+  try {
+    await browser.browserAction.setBadgeText({ text: badgeText });
+    if (badgeText && !badgeUpdateIntervalId) {
+      // Start interval only if badge has text and interval not running
+      badgeUpdateIntervalId = setInterval(updateBadgeText, 1000);
+    } else if (!badgeText && badgeUpdateIntervalId) {
+      // Stop interval if badge is cleared
+      clearInterval(badgeUpdateIntervalId);
+      badgeUpdateIntervalId = null;
+    }
+  } catch (e) {
+    console.error("Error setting badge text:", e);
+    if (badgeUpdateIntervalId) {
+      clearInterval(badgeUpdateIntervalId);
+      badgeUpdateIntervalId = null;
+    }
+  }
+}
+
+async function clearBadge() {
+  try {
+    await browser.browserAction.setBadgeText({ text: '' });
+    if (badgeUpdateIntervalId) {
+      clearInterval(badgeUpdateIntervalId);
+      badgeUpdateIntervalId = null;
+    }
+  } catch (e) {
+    console.error("Error clearing badge text:", e);
+  }
+}
+
+async function setBadgeColor() {
+  try {
+    await browser.browserAction.setBadgeBackgroundColor({ color: '#007bff' }); // Blue color
+  } catch (e) {
+    console.error("Error setting badge background color:", e);
+  }
+}
 
 // --- Initialization ---
 
 async function initialize() {
+  await setBadgeColor(); // Set color on startup
+  await clearBadge(); // Ensure badge is clear initially
   // Load settings from storage
   try {
     // Added urlList to retrieval
@@ -43,10 +114,13 @@ async function initialize() {
 
 async function scheduleNextRefresh(forceSchedule = false) {
   await browser.alarms.clear(ALARM_NAME); // Clear any existing alarm
+  await clearBadge(); // Clear badge initially when scheduling starts
 
   if (activeFiverrTabId === null && !forceSchedule) {
     console.log("No active Fiverr tab. Timer stopped.");
     nextRefreshTime = null;
+    // Ensure badge is cleared if timer stops
+    // clearBadge(); // Already called above
     return;
   }
 
@@ -59,11 +133,14 @@ async function scheduleNextRefresh(forceSchedule = false) {
   try {
     browser.alarms.create(ALARM_NAME, { delayInMinutes: delayMinutes });
     nextRefreshTime = Date.now() + delayMs;
-    const nextUrl = fiverrUrls[currentUrlIndex] || 'current page'; // Show next URL for clarity
+    // Update badge immediately after scheduling
+    await updateBadgeText();
+    const nextUrl = fiverrUrls[currentUrlIndex] || 'current page';
     console.log(`Alarm scheduled for tab ${activeFiverrTabId}. Next action (~${Math.round(delayMs / 1000)}s): Navigate to ${nextUrl}`);
   } catch (e) {
     console.error("Error creating alarm:", e);
     nextRefreshTime = null;
+    await clearBadge(); // Clear badge on error
   }
 }
 
@@ -73,7 +150,8 @@ async function scheduleNextRefresh(forceSchedule = false) {
 browser.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
     console.log("Alarm triggered.");
-    nextRefreshTime = null; // Clear scheduled time before potentially rescheduling
+    nextRefreshTime = null; // Clear scheduled time
+    await clearBadge(); // Clear badge immediately on trigger
 
     if (activeFiverrTabId !== null) {
       try {
@@ -99,13 +177,14 @@ browser.alarms.onAlarm.addListener(async (alarm) => {
           currentUrlIndex = (currentUrlIndex + 1) % fiverrUrls.length;
 
           // Reschedule automatically after action
-          await scheduleNextRefresh();
+          await scheduleNextRefresh(); // This will update the badge again
 
         } else {
           console.log(`Tab ${activeFiverrTabId} is no longer a valid Fiverr tab or doesn't exist. Stopping timer.`);
           activeFiverrTabId = null;
           currentUrlIndex = 0; // Reset index
           await browser.alarms.clear(ALARM_NAME);
+          await clearBadge(); // Ensure badge is cleared when stopping
         }
       } catch (e) {
         console.error(`Error accessing or updating tab ${activeFiverrTabId}:`, e);
@@ -114,10 +193,12 @@ browser.alarms.onAlarm.addListener(async (alarm) => {
         nextRefreshTime = null;
         currentUrlIndex = 0;
         await browser.alarms.clear(ALARM_NAME);
+        await clearBadge(); // Ensure badge is cleared on error
       }
     } else {
       console.log("Alarm triggered but no active Fiverr tab identified. Clearing alarm.");
       await browser.alarms.clear(ALARM_NAME);
+      await clearBadge(); // Ensure badge is cleared
     }
   }
 });
@@ -148,6 +229,7 @@ browser.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
     nextRefreshTime = null;
     currentUrlIndex = 0; // Reset index
     await browser.alarms.clear(ALARM_NAME);
+    await clearBadge(); // Clear badge when tab closes
     console.log("Timer stopped.");
   }
 });
@@ -206,7 +288,9 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
           // If a timer is running, reschedule it immediately with new interval
           if (activeFiverrTabId !== null) {
             console.log("Rescheduling timer with new settings.");
-            scheduleNextRefresh(true); // Force reschedule
+            scheduleNextRefresh(true); // This will also update the badge
+          } else {
+            clearBadge(); // Ensure badge is clear if timer isn't running
           }
           sendResponse({ success: true });
         })
@@ -238,6 +322,7 @@ async function checkSpecificTabAndManageTimer(tabId) {
         nextRefreshTime = null;
         currentUrlIndex = 0;
         await browser.alarms.clear(ALARM_NAME);
+        await clearBadge(); // Clear badge
       }
       return;
     }
@@ -255,7 +340,10 @@ async function checkSpecificTabAndManageTimer(tabId) {
         const alarm = await browser.alarms.get(ALARM_NAME);
         if (!alarm && nextRefreshTime === null) {
           console.log("Timer was not active, restarting.");
-          await scheduleNextRefresh();
+          await scheduleNextRefresh(); // This updates the badge
+        } else if (alarm && nextRefreshTime !== null) {
+          // Ensure badge is up-to-date if already running
+          await updateBadgeText();
         }
       }
     } else {
@@ -266,6 +354,7 @@ async function checkSpecificTabAndManageTimer(tabId) {
         nextRefreshTime = null;
         currentUrlIndex = 0;
         await browser.alarms.clear(ALARM_NAME);
+        await clearBadge(); // Clear badge
       }
     }
   } catch (e) {
@@ -276,6 +365,7 @@ async function checkSpecificTabAndManageTimer(tabId) {
       nextRefreshTime = null;
       currentUrlIndex = 0;
       await browser.alarms.clear(ALARM_NAME);
+      await clearBadge(); // Clear badge
     }
   }
 }
@@ -295,6 +385,7 @@ async function checkActiveTabAndManageTimer() {
         nextRefreshTime = null;
         currentUrlIndex = 0;
         await browser.alarms.clear(ALARM_NAME);
+        await clearBadge(); // Clear badge
       }
     }
   } catch (e) {
@@ -304,6 +395,7 @@ async function checkActiveTabAndManageTimer() {
     nextRefreshTime = null;
     currentUrlIndex = 0;
     await browser.alarms.clear(ALARM_NAME);
+    await clearBadge(); // Clear badge
   }
 }
 
